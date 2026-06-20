@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -46,10 +47,14 @@ class Fluttertoast {
   static const MethodChannel _channel =
       const MethodChannel('PonnamKarthik/fluttertoast');
 
+  /// Boolean to track if a toast is currently being shown
+  static bool isCurrentlyShowingToast = false;
+
   /// Let say you have an active show
   /// Use this method to hide the toast immediately
   static Future<bool?> cancel() async {
     bool? res = await _channel.invokeMethod("cancel");
+    isCurrentlyShowingToast = false;  // Update variable
     return res;
   }
 
@@ -90,10 +95,10 @@ class Fluttertoast {
       gravityToast = "bottom";
     }
 
-    if (backgroundColor == null && Platform.isIOS) {
+    if (backgroundColor == null && !kIsWeb && Platform.isIOS) {
       backgroundColor = Colors.black;
     }
-    if (textColor == null && Platform.isIOS) {
+    if (textColor == null && !kIsWeb && Platform.isIOS) {
       textColor = Colors.white;
     }
     final Map<String, dynamic> params = <String, dynamic>{
@@ -101,10 +106,10 @@ class Fluttertoast {
       'length': toast,
       'time': timeInSecForIosWeb,
       'gravity': gravityToast,
-      'bgcolor': backgroundColor?.value,
-      'iosBgcolor': backgroundColor?.value,
-      'textcolor': textColor?.value,
-      'iosTextcolor': textColor?.value,
+      'bgcolor': backgroundColor?.toARGB32(),
+      'iosBgcolor': backgroundColor?.toARGB32(),
+      'textcolor': textColor?.toARGB32(),
+      'iosTextcolor': textColor?.toARGB32(),
       'fontSize': fontSize,
       'fontAsset': fontAsset,
       'webShowClose': webShowClose,
@@ -112,7 +117,15 @@ class Fluttertoast {
       'webPosition': webPosition
     };
 
+    isCurrentlyShowingToast = true;  // Update variable
+
     bool? res = await _channel.invokeMethod('showToast', params);
+
+    // Assuming the platform will invoke 'cancel' method after showing toast
+    Future.delayed(Duration(seconds: timeInSecForIosWeb), () {
+      isCurrentlyShowingToast = false;
+    });
+
     return res;
   }
 }
@@ -155,6 +168,7 @@ class FToast {
   _showOverlay() {
     if (_overlayQueue.isEmpty) {
       _entry = null;
+      Fluttertoast.isCurrentlyShowingToast = false;  // Update variable
       return;
     }
     if (context == null) {
@@ -163,19 +177,18 @@ class FToast {
       throw ("Error: Context is null, Please call init(context) before showing toast.");
     }
 
-    /// To prevent exception "Looking up a deactivated widget's ancestor is unsafe."
-    /// which can be thrown if context was unmounted (e.g. screen with given context was popped)
-    /// TODO: revert this change when envoirment will be Flutter >= 3.7.0
-    // if (context?.mounted != true) {
-    //   if (kDebugMode) {
-    //     print(
-    //         'FToast: Context was unmuted, can not show ${_overlayQueue.length} toast.');
-    //   }
+    // To prevent exception "Looking up a deactivated widget's ancestor is unsafe."
+    // which can be thrown if context was unmounted (e.g. screen with given context was popped)
+    if (context?.mounted != true) {
+      if (kDebugMode) {
+        print(
+            'FToast: Context was unmuted, can not show ${_overlayQueue.length} toast.');
+      }
 
-    //   /// Need to clear queue
-    //   removeQueuedCustomToasts();
-    //   return; // Or maybe thrown error too
-    // }
+      // We should also clear the queue
+      removeQueuedCustomToasts();
+      return;
+    }
     OverlayState? _overlay;
     try {
       _overlay = Overlay.of(context!);
@@ -199,6 +212,8 @@ class FToast {
         removeCustomToast();
       });
     });
+
+    Fluttertoast.isCurrentlyShowingToast = true;  // Update variable
   }
 
   /// If any active toast present
@@ -226,6 +241,7 @@ class FToast {
     _overlayQueue.clear();
     _entry?.remove();
     _entry = null;
+    Fluttertoast.isCurrentlyShowingToast = false;  // Update variable
   }
 
   /// showToast accepts all the required paramenters and prepares the child
